@@ -1,0 +1,51 @@
+# ====================================================================
+# GramSeva — Git Ignore Rules
+# ====================================================================
+
+# 1. Environment & Secrets (CRITICAL: Protect your API keys & passwords)
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+!*.example
+
+# 2. Python Virtual Environments
+.venv/
+venv/
+ENV/
+backend/.venv/
+env/
+*.env/
+
+# 3. Python Bytecode & Test Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# 4. Node.js & Next.js Build Outputs
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+build/
+dist/
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# 5. Supabase CLI Cache
+supabase/.temp/
+
+# 6. Operating System & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

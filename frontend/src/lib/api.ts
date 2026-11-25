@@ -23,6 +23,10 @@ export async function submitComplaint(data: {
   village_name: string;
   ward_number: string;
   address: string;
+  district?: string | null;
+  taluk?: string | null;
+  pincode?: string | null;
+  landmark?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   image_url?: string | null;
@@ -36,6 +40,31 @@ export async function submitComplaint(data: {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Failed to submit complaint');
   }
+  return res.json();
+}
+
+export async function uploadImage(file: File, folder: string = 'gramseva_complaints'): Promise<{
+  url: string;
+  public_id?: string;
+  filename?: string;
+  format?: string;
+  provider: 'cloudinary' | 'local';
+  size: number;
+}> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('folder', folder);
+
+  const res = await fetch(`${API_BASE}/api/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to upload image file');
+  }
+
   return res.json();
 }
 
@@ -199,6 +228,18 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+export interface CaptchaResponse {
+  captcha_id: string;
+  captcha_image: string;
+  length: number;
+}
+
+export async function fetchCaptcha(): Promise<CaptchaResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/captcha`);
+  if (!res.ok) throw new Error('Failed to load CAPTCHA verification');
+  return res.json();
+}
+
 export interface AdminLoginStageAResponse {
   stage: string;
   challenge_id: string;
@@ -217,22 +258,104 @@ export interface AdminVerifiedSessionResponse {
     id: string;
     email: string;
     name: string;
-    role: 'primary_admin' | 'admin';
+    role: 'primary_admin' | 'main_admin' | 'department_officer' | 'admin';
+    department_id?: string;
     department_name: string;
-    status: 'active' | 'suspended';
+    department_code?: string;
+    employee_id?: string;
+    status: 'active' | 'suspended' | 'pending_approval';
     last_login_at?: string;
   };
 }
 
-export async function adminLogin(email: string, password: string): Promise<AdminLoginStageAResponse> {
+export async function adminLogin(
+  email: string, 
+  password: string, 
+  role?: string,
+  captcha_id?: string,
+  captcha_code?: string
+): Promise<any> {
   const res = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ 
+      email, 
+      password, 
+      role, 
+      captcha_id, 
+      captcha_code 
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || 'Authentication failed. Please verify credentials.');
+  }
+  return res.json();
+}
+
+export interface RegisterOfficerPayload {
+  full_name: string;
+  employee_id: string;
+  email: string;
+  password: string;
+  department_id: string;
+  department_name: string;
+  department_code: string;
+}
+
+export async function registerDepartmentOfficer(payload: RegisterOfficerPayload): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auth/register-officer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to register officer.');
+  }
+  return res.json();
+}
+
+export async function verifyOfficerEmail(token: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auth/verify-officer-email?token=${encodeURIComponent(token)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Officer verification failed or link expired.');
+  }
+  return res.json();
+}
+
+export async function fetchDepartmentOfficers(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/api/auth/department-officers`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch department officers.');
+  }
+  return res.json();
+}
+
+export async function approveDepartmentOfficer(officerId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auth/department-officers/${officerId}/approve`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to approve officer.');
+  }
+  return res.json();
+}
+
+export async function deactivateDepartmentOfficer(officerId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auth/department-officers/${officerId}/deactivate`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to update officer status.');
   }
   return res.json();
 }
@@ -299,7 +422,15 @@ export async function executePasswordReset(token: string, password: string): Pro
   return res.json();
 }
 
-export async function validateAdminInvitation(token: string): Promise<{ email: string; full_name: string; role: string; department_name: string; invited_by: string }> {
+export async function validateAdminInvitation(token: string): Promise<{
+  email: string;
+  full_name: string;
+  role: string;
+  department_name: string;
+  department_code?: string;
+  employee_id?: string;
+  invited_by: string;
+}> {
   const res = await fetch(`${API_BASE}/api/auth/invitation?token=${encodeURIComponent(token)}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -360,6 +491,8 @@ export async function inviteAdministrator(data: {
   full_name: string;
   role: string;
   department_name?: string;
+  department_code?: string;
+  employee_id?: string;
 }): Promise<{ status: string; message: string; dev_invite_url?: string }> {
   const res = await fetch(`${API_BASE}/api/auth/invite-admin`, {
     method: 'POST',

@@ -2,9 +2,19 @@
 GramSeva Configuration Module
 Loads and validates environment variables using Pydantic Settings.
 """
+import os
+from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_ROOT_DIR = _BACKEND_DIR.parent
+_ENV_PATHS = (
+    str(_BACKEND_DIR / ".env"),
+    str(_ROOT_DIR / ".env"),
+    ".env",
+)
 
 
 class Settings(BaseSettings):
@@ -27,7 +37,7 @@ class Settings(BaseSettings):
 
     # Google Gemini AI
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
 
     # Meta WhatsApp Cloud API
     WHATSAPP_API_VERSION: str = "v20.0"
@@ -47,6 +57,12 @@ class Settings(BaseSettings):
     CHALLENGE_EXPIRE_MINUTES: int = 10
     INVITATION_EXPIRE_HOURS: int = 24
     PASSWORD_RESET_EXPIRE_MINUTES: int = 15
+
+    # Cloudinary Media Storage Configuration
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+    CLOUDINARY_UPLOAD_PRESET: str = ""
 
     # SMTP Configuration (Optional: falls back to dev logging and debug audit)
     SMTP_HOST: str = ""
@@ -77,7 +93,7 @@ class Settings(BaseSettings):
         return bool(self.WHATSAPP_PHONE_NUMBER_ID and self.WHATSAPP_ACCESS_TOKEN)
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_PATHS,
         env_file_encoding="utf-8",
         extra="ignore"
     )

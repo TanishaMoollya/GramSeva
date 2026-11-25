@@ -18,6 +18,19 @@ router = APIRouter(prefix="/api/auth", tags=["Administrator Authentication"])
 class LoginRequest(BaseModel):
     email: str = Field(..., min_length=3)
     password: str = Field(..., min_length=1)
+    role: Optional[str] = None
+    captcha_id: Optional[str] = None
+    captcha_code: Optional[str] = None
+
+
+class RegisterOfficerRequest(BaseModel):
+    full_name: str = Field(..., min_length=2)
+    employee_id: str = Field(..., min_length=3)
+    email: str = Field(..., min_length=5)
+    password: str = Field(..., min_length=8)
+    department_id: str
+    department_name: str
+    department_code: str
 
 
 class VerifyChallengeRequest(BaseModel):
@@ -40,9 +53,11 @@ class ResetPasswordRequest(BaseModel):
 class InviteAdminRequest(BaseModel):
     email: str = Field(..., min_length=3)
     full_name: str = Field(..., min_length=2)
-    role: str = "admin"
-    department_name: Optional[str] = "General Administration"
+    role: str = "department_officer"
+    department_name: Optional[str] = "Sanitation"
     department_id: Optional[str] = None
+    department_code: Optional[str] = None
+    employee_id: Optional[str] = None
 
 
 class AcceptInvitationRequest(BaseModel):
@@ -53,17 +68,31 @@ class AcceptInvitationRequest(BaseModel):
 
 # --- Endpoints ---
 
-@router.post("/login", summary="Stage A: Password Authentication & Email Challenge Issuance")
+@router.get("/captcha", summary="Generate High-Contrast Government CAPTCHA Code")
+def get_captcha():
+    """
+    Generates a fresh 5-character government-portal-style CAPTCHA for login verification.
+    """
+    from backend.app.services.admin_auth_service import create_captcha
+    return create_captcha()
+
+
+@router.post("/login", summary="Three-Role Authentication Handler")
 def login(req: LoginRequest, request: Request):
     """
-    Validates administrative password and initiates a single-use 10-minute email verification challenge.
-    Does NOT issue an access token.
+    Role-aware authentication endpoint:
+    - Main Admin (Panchayat Officer) -> Authenticates password & triggers fresh email verification challenge
+    - Department Officer -> Authenticates credentials, validates verified email & Main Admin approval, returns direct JWT
+    - WhatsApp CRM Manager -> Authenticates credentials & returns direct JWT
     """
     client_ip = request.client.host if request.client else "127.0.0.1"
     user_agent = request.headers.get("user-agent", "unknown")
     return admin_auth_service.initiate_login(
         email=req.email,
         password=req.password,
+        expected_role=req.role,
+        captcha_id=req.captcha_id,
+        captcha_code=req.captcha_code,
         ip_address=client_ip,
         user_agent=user_agent
     )
@@ -240,3 +269,59 @@ def get_audit_logs(
     Returns security audit log entries.
     """
     return admin_auth_service.get_audit_logs(admin, limit=limit)
+
+
+# --- Department Officer Registration & Management Endpoints ---
+
+@router.post("/register-officer", summary="Department Officer Employee Registration")
+def register_officer(req: RegisterOfficerRequest, request: Request):
+    """
+    Self-service registration for Department Officers.
+    Issues email verification link and puts profile into 'pending_approval' status.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return admin_auth_service.register_department_officer(
+        full_name=req.full_name,
+        employee_id=req.employee_id,
+        email=req.email,
+        password=req.password,
+        department_id=req.department_id,
+        department_name=req.department_name,
+        department_code=req.department_code,
+        ip_address=client_ip
+    )
+
+
+@router.get("/verify-officer-email", summary="Verify Department Officer Official Email")
+def verify_officer_email(token: str, request: Request):
+    """
+    Consumes email verification token for Department Officer.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return admin_auth_service.verify_officer_email(token, ip_address=client_ip)
+
+
+@router.get("/department-officers", summary="List All Department Officers (Main Admin Only)")
+def get_department_officers(admin: Dict[str, Any] = Depends(require_primary_admin)):
+    """
+    Lists registered Department Officers across all departments.
+    """
+    return admin_auth_service.list_department_officers(admin)
+
+
+@router.post("/department-officers/{officer_id}/approve", summary="Approve Department Officer (Main Admin Only)")
+def approve_officer(officer_id: str, request: Request, admin: Dict[str, Any] = Depends(require_primary_admin)):
+    """
+    Main Admin action to approve a verified Department Officer.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return admin_auth_service.approve_department_officer(admin, officer_id, ip_address=client_ip)
+
+
+@router.post("/department-officers/{officer_id}/deactivate", summary="Deactivate / Toggle Officer Account (Main Admin Only)")
+def deactivate_officer(officer_id: str, request: Request, admin: Dict[str, Any] = Depends(require_primary_admin)):
+    """
+    Main Admin action to suspend or reactivate a Department Officer.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return admin_auth_service.deactivate_department_officer(admin, officer_id, ip_address=client_ip)

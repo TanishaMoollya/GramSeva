@@ -2,12 +2,14 @@
 GramSeva — AI-Powered Public Grievance Management System
 FastAPI Backend Application Entrypoint
 """
+import os
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from backend.app.config import settings
-from backend.app.routers import complaints, departments, analytics, whatsapp, ai, auth
+from backend.app.routers import complaints, departments, analytics, whatsapp, ai, auth, upload
 
 
 @asynccontextmanager
@@ -46,6 +48,13 @@ app.include_router(departments.router)
 app.include_router(analytics.router)
 app.include_router(whatsapp.router)
 app.include_router(ai.router)
+app.include_router(upload.router)
+
+# Mount Local Uploads Static Directory (served from backend/uploads where upload_service persists files)
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+upload_dir = os.path.join(backend_dir, "uploads")
+os.makedirs(upload_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
 
 @app.get("/", tags=["Root"])

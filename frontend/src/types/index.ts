@@ -41,6 +41,10 @@ export interface Complaint {
   village_name: string;
   ward_number: string;
   address: string;
+  district?: string | null;
+  taluk?: string | null;
+  pincode?: string | null;
+  landmark?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   source: ComplaintSource;
@@ -64,6 +68,8 @@ export interface Complaint {
   resolution_remarks?: string | null;
   rejection_reason?: string | null;
   resolved_at?: string | null;
+  proof_url?: string | null;
+  image_url?: string | null;
 
   // Relations
   status_history: StatusHistoryItem[];

@@ -25,7 +25,7 @@ export default function Navbar() {
     { href: '/register', label: lang === 'EN' ? 'File Complaint' : 'ದೂರು ಸಲ್ಲಿಸಿ', icon: FileText },
     { href: '/track', label: lang === 'EN' ? 'Track Status' : 'ಸ್ಥಿತಿ ಪರಿಶೀಲನೆ', icon: Search },
     { href: '/whatsapp', label: lang === 'EN' ? 'WhatsApp Bot' : 'ವಾಟ್ಸಾಪ್ ಸೇವೆ', icon: MessageSquare },
-    { href: '/admin', label: lang === 'EN' ? 'Admin CRM' : 'ಅಧಿಕಾರಿಗಳ ಲಾಗಿನ್', icon: ShieldCheck },
+    { href: '/admin', label: lang === 'EN' ? 'Admin' : 'ಅಧಿಕಾರಿಗಳ ಲಾಗಿನ್', icon: ShieldCheck },
   ];
 
   const toggleLanguage = () => {
@@ -43,9 +43,7 @@ export default function Navbar() {
             </span>
           </div>
           <div className="flex items-center gap-4 text-[11px]">
-            <span className="hidden sm:inline-flex items-center gap-1 opacity-90">
-              <PhoneCall className="w-3.5 h-3.5" /> Toll-Free: 1800-425-GRAM (4726)
-            </span>
+           
             <button
               onClick={toggleLanguage}
               className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded transition font-medium"

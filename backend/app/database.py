@@ -368,12 +368,102 @@ _DEMO_STORE: Dict[str, List[Dict[str, Any]]] = {
             "department_id": "d0000005-0000-0000-0000-000000000005",
             "department_name": "General Administration",
             "status": "active",
-            # Standard hash for primary admin default password
             "password_hash": "pbkdf2_sha256$100000$c2VjdXJlX2dyYW1zZXZh$07851d7b3225ce8d56b0dcf867d74f2ca539423528bfe75f7dfa7732a904faea",
             "invited_by": "System Initializer",
+            "is_email_verified": True,
             "last_login_at": None,
             "created_at": (datetime.utcnow() - timedelta(days=30)).isoformat(),
             "updated_at": (datetime.utcnow() - timedelta(days=30)).isoformat()
+        },
+        {
+            "id": "a0000003-0000-0000-0000-000000000003",
+            "user_id": "u0000003-0000-0000-0000-000000000003",
+            "email": "sanitation.officer@gramseva.gov.in",
+            "employee_id": "SAN-OFF-001",
+            "full_name": "Sri. Somanna (Sanitation Officer)",
+            "role": "department_officer",
+            "department_id": "d0000001-0000-0000-0000-000000000001",
+            "department_name": "Sanitation",
+            "department_code": "SAN",
+            "status": "active",
+            "password_hash": "pbkdf2_sha256$100000$274ca2ebf7573f5b6b983f654b144ba5$571207b91d59dca81f1084347594309b340bf5947fc06f5f0c294a100cb1af08",
+            "invited_by": "System Initializer",
+            "is_email_verified": True,
+            "last_login_at": None,
+            "created_at": (datetime.utcnow() - timedelta(days=10)).isoformat(),
+            "updated_at": (datetime.utcnow() - timedelta(days=10)).isoformat()
+        },
+        {
+            "id": "a0000004-0000-0000-0000-000000000004",
+            "user_id": "u0000004-0000-0000-0000-000000000004",
+            "email": "pwd.officer@gramseva.gov.in",
+            "employee_id": "PWD-OFF-002",
+            "full_name": "Sri. Suresh Gowda (Junior Engineer PWD)",
+            "role": "department_officer",
+            "department_id": "d0000002-0000-0000-0000-000000000002",
+            "department_name": "Public Works",
+            "department_code": "PWD",
+            "status": "active",
+            "password_hash": "pbkdf2_sha256$100000$9df0be5d56ac1ab8f897ec6b889dc327$1dfc3c0ce48602d984fe1a7fa4b44f225ce3bfc24bdfd3464305da221ba1d10a",
+            "invited_by": "System Initializer",
+            "is_email_verified": True,
+            "last_login_at": None,
+            "created_at": (datetime.utcnow() - timedelta(days=10)).isoformat(),
+            "updated_at": (datetime.utcnow() - timedelta(days=10)).isoformat()
+        },
+        {
+            "id": "a0000005-0000-0000-0000-000000000005",
+            "user_id": "u0000005-0000-0000-0000-000000000005",
+            "email": "water.officer@gramseva.gov.in",
+            "employee_id": "WTR-OFF-003",
+            "full_name": "Smt. Kavitha Reddy (Water Supply Inspector)",
+            "role": "department_officer",
+            "department_id": "d0000003-0000-0000-0000-000000000003",
+            "department_name": "Water Supply",
+            "department_code": "WTR",
+            "status": "active",
+            "password_hash": "pbkdf2_sha256$100000$1a4504773a825bfcf60fcb891d4e46fd$ab311300fbcebc1f3a675af0e880d91c5357c499883896ddba881ffeda91e7b9",
+            "invited_by": "System Initializer",
+            "is_email_verified": True,
+            "last_login_at": None,
+            "created_at": (datetime.utcnow() - timedelta(days=10)).isoformat(),
+            "updated_at": (datetime.utcnow() - timedelta(days=10)).isoformat()
+        },
+        {
+            "id": "a0000006-0000-0000-0000-000000000006",
+            "user_id": "u0000006-0000-0000-0000-000000000006",
+            "email": "electricity.officer@gramseva.gov.in",
+            "employee_id": "ELE-OFF-004",
+            "full_name": "Sri. Venkatesh Murthy (Lineman/BESCOM)",
+            "role": "department_officer",
+            "department_id": "d0000004-0000-0000-0000-000000000004",
+            "department_name": "Electricity",
+            "department_code": "ELE",
+            "status": "active",
+            "password_hash": "pbkdf2_sha256$100000$c1a6f14e588d7f53936400fd47c83bc9$14620560a2213d49b8bb82bf120840959268ac7ad05df832c68645e46e365da4",
+            "invited_by": "System Initializer",
+            "is_email_verified": True,
+            "last_login_at": None,
+            "created_at": (datetime.utcnow() - timedelta(days=10)).isoformat(),
+            "updated_at": (datetime.utcnow() - timedelta(days=10)).isoformat()
+        },
+        {
+            "id": "a0000007-0000-0000-0000-000000000007",
+            "user_id": "u0000007-0000-0000-0000-000000000007",
+            "email": "admin.officer@gramseva.gov.in",
+            "employee_id": "ADM-OFF-005",
+            "full_name": "Sri. Chandrashekar (Panchayat Secretary)",
+            "role": "department_officer",
+            "department_id": "d0000005-0000-0000-0000-000000000005",
+            "department_name": "General Administration",
+            "department_code": "ADM",
+            "status": "active",
+            "password_hash": "pbkdf2_sha256$100000$7e2eb97ffa085c6d55926bb79029de12$fc46e07bc5f615bff71cccf628df06fa936406a4513104fef830d361d8898b04",
+            "invited_by": "System Initializer",
+            "is_email_verified": True,
+            "last_login_at": None,
+            "created_at": (datetime.utcnow() - timedelta(days=10)).isoformat(),
+            "updated_at": (datetime.utcnow() - timedelta(days=10)).isoformat()
         }
     ],
     "admin_login_challenges": [],
@@ -382,16 +472,10 @@ _DEMO_STORE: Dict[str, List[Dict[str, Any]]] = {
     "admin_audit_logs": []
 }
 
+import threading
+
 _seq_counter = 1007
-
-
-def get_next_tracking_id() -> str:
-    global _seq_counter
-    current_year = datetime.utcnow().strftime("%Y")
-    tid = f"GS-{current_year}-{_seq_counter}"
-    _seq_counter += 1
-    return tid
-
+_seq_lock = threading.Lock()
 
 # Live Supabase client initialization (if credentials are provided)
 supabase_client = None
@@ -404,6 +488,67 @@ if settings.is_supabase_configured:
     except Exception as e:
         print(f"Warning: Could not connect to Supabase: {e}. Falling back to demo data store.")
         supabase_client = None
+
+
+def _sync_tracking_id_counter():
+    """
+    Synchronizes _seq_counter with the highest existing tracking_id across
+    Supabase and the in-memory repository to guarantee uniqueness and prevent 23505 violations.
+    """
+    global _seq_counter
+    current_year = datetime.utcnow().strftime("%Y")
+    prefix = f"GS-{current_year}-"
+    highest = _seq_counter
+
+    # 1. Inspect in-memory demo store
+    for c in _DEMO_STORE.get("complaints", []):
+        tid = str(c.get("tracking_id", "")).strip()
+        if tid.startswith(prefix):
+            suffix = tid[len(prefix):]
+            if suffix.isdigit():
+                val = int(suffix)
+                if val >= highest:
+                    highest = val + 1
+
+    # 2. Inspect live Supabase database
+    if supabase_client:
+        try:
+            res = supabase_client.table("complaints").select("tracking_id").ilike("tracking_id", f"{prefix}%").execute()
+            if res.data:
+                for row in res.data:
+                    tid = str(row.get("tracking_id", "")).strip()
+                    if tid.startswith(prefix):
+                        suffix = tid[len(prefix):]
+                        if suffix.isdigit():
+                            val = int(suffix)
+                            if val >= highest:
+                                highest = val + 1
+        except Exception as e:
+            print(f"Notice: Could not sync tracking ID sequence from Supabase: {e}")
+
+    _seq_counter = highest
+    print(f"GramSeva tracking ID sequence initialized at: {prefix}{_seq_counter}")
+
+
+# Synchronize sequence on load
+try:
+    _sync_tracking_id_counter()
+except Exception:
+    pass
+
+
+def get_next_tracking_id() -> str:
+    """
+    Generates a guaranteed unique sequential tracking ID e.g. 'GS-2026-1012'.
+    Thread-safe and synchronized with live PostgreSQL.
+    """
+    global _seq_counter
+    with _seq_lock:
+        current_year = datetime.utcnow().strftime("%Y")
+        prefix = f"GS-{current_year}-"
+        tid = f"{prefix}{_seq_counter}"
+        _seq_counter += 1
+        return tid
 
 
 def get_db():

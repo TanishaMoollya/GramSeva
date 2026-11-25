@@ -1,9 +1,10 @@
 """
 Complaint and Grievance Management API Router
 """
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Query, status, Depends
 
+from backend.app.dependencies import get_optional_admin
 from backend.app.models.complaint import (
     ComplaintCreate,
     ComplaintResponse,
@@ -41,11 +42,19 @@ def list_complaints(
     status: Optional[str] = Query(None, description="Filter by status"),
     source: Optional[str] = Query(None, description="Filter by source (web/whatsapp)"),
     priority: Optional[str] = Query(None, description="Filter by priority"),
-    sort_by: str = Query("newest", description="Sort by: newest, oldest, priority")
+    sort_by: str = Query("newest", description="Sort by: newest, oldest, priority"),
+    current_admin: Optional[Dict[str, Any]] = Depends(get_optional_admin)
 ):
     """
     List, search, filter and sort grievances for the Admin CRM.
+    Enforces strict Department Officer isolation: officers see ONLY their department's grievances.
     """
+    # Strict Department Officer Isolation
+    if current_admin and current_admin.get("role") == "department_officer":
+        officer_dept = current_admin.get("department_name")
+        if officer_dept:
+            department = officer_dept
+
     return complaint_service.get_complaints(
         search=search,
         category=category,
@@ -93,12 +102,28 @@ def get_complaint(complaint_id: str):
 
 
 @router.patch("/{complaint_id}/status", response_model=ComplaintResponse)
-async def update_complaint_status(complaint_id: str, req: StatusUpdateRequest):
+async def update_complaint_status(
+    complaint_id: str,
+    req: StatusUpdateRequest,
+    current_admin: Optional[Dict[str, Any]] = Depends(get_optional_admin)
+):
     """
     Admin CRM action: Update status (Submitted -> Under Review -> Assigned -> In Progress -> Resolved / Rejected).
     Triggers automated WhatsApp notification to citizen if enabled.
+    Department Officers are strictly restricted to updating complaints assigned to their department.
     """
     try:
+        # Strict Department Officer Check
+        if current_admin and current_admin.get("role") == "department_officer":
+            existing = complaint_service.get_complaint_by_id(complaint_id)
+            if existing:
+                officer_dept = current_admin.get("department_name")
+                if existing.assigned_department_name and existing.assigned_department_name != officer_dept:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Access denied: This grievance belongs to the {existing.assigned_department_name} department."
+                    )
+
         updated = await complaint_service.update_status(complaint_id, req)
         return updated
     except ValueError as ve:

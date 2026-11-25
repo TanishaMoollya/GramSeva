@@ -133,42 +133,62 @@ async def classify_complaint_ai(description: str, citizen_category: str = "Other
 
         prompt = f"Grievance Description: \"{description}\"\nCitizen Selected Category: \"{citizen_category}\""
         
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-            config={
-                "system_instruction": system_instruction,
-                "response_mime_type": "application/json",
-                "temperature": 0.1
-            }
-        )
+        # Resilient candidate model list with auto-failover
+        candidate_models = [
+            settings.GEMINI_MODEL,
+            "gemini-3.5-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-3.8-flash",
+        ]
+        unique_models = []
+        for m in candidate_models:
+            if m and m not in unique_models:
+                unique_models.append(m)
 
-        raw_text = response.text.strip()
-        data = json.loads(raw_text)
+        last_error = None
+        for model_name in unique_models:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config={
+                        "system_instruction": system_instruction,
+                        "response_mime_type": "application/json",
+                        "temperature": 0.1
+                    }
+                )
 
-        # Validate fields
-        category = data.get("category")
-        if category not in ALLOWED_CATEGORIES:
-            category = citizen_category if citizen_category in ALLOWED_CATEGORIES else "Other public issues"
+                raw_text = response.text.strip()
+                data = json.loads(raw_text)
 
-        priority = data.get("priority")
-        if priority not in ALLOWED_PRIORITIES:
-            priority = "Medium"
+                # Validate fields
+                category = data.get("category")
+                if category not in ALLOWED_CATEGORIES:
+                    category = citizen_category if citizen_category in ALLOWED_CATEGORIES else "Other public issues"
 
-        department = data.get("department")
-        if department not in ALLOWED_DEPARTMENTS:
-            department = "General Administration"
+                priority = data.get("priority")
+                if priority not in ALLOWED_PRIORITIES:
+                    priority = "Medium"
 
-        summary = data.get("summary") or description[:120]
-        confidence = float(data.get("confidence", 0.92))
+                department = data.get("department")
+                if department not in ALLOWED_DEPARTMENTS:
+                    department = "General Administration"
 
-        return {
-            "category": category,
-            "priority": priority,
-            "department": department,
-            "summary": summary,
-            "confidence": min(max(confidence, 0.5), 0.99)
-        }
+                summary = data.get("summary") or description[:120]
+                confidence = float(data.get("confidence", 0.92))
+
+                return {
+                    "category": category,
+                    "priority": priority,
+                    "department": department,
+                    "summary": summary,
+                    "confidence": min(max(confidence, 0.5), 0.99)
+                }
+            except Exception as model_err:
+                last_error = model_err
+                logger.info(f"Gemini candidate '{model_name}' busy or unavailable ({model_err}); attempting next candidate...")
+
+        raise last_error or RuntimeError("All candidate Gemini models failed")
 
     except Exception as e:
         logger.warning(f"Gemini API call failed or timed out: {e}. Falling back to heuristic classifier.")

@@ -133,3 +133,67 @@ def get_whatsapp_messages():
     """
     store = get_demo_store()
     return store["whatsapp_messages"]
+
+
+@router.get("/crm-overview")
+def get_whatsapp_crm_overview():
+    """
+    Returns complete WhatsApp CRM analytics and session data for the WhatsApp CRM Manager dashboard.
+    """
+    from backend.app.services.complaint_service import complaint_service
+    store = get_demo_store()
+    convs = list(store["whatsapp_conversations"].values())
+    msgs = store["whatsapp_messages"]
+    wa_complaints = complaint_service.get_complaints(source="whatsapp")
+
+    # If no demo conversations yet, provide realistic telemetry
+    if not convs:
+        convs = [
+            {
+                "phone_number": "+919845234567",
+                "current_step": "COMPLETED",
+                "last_interaction_at": "2026-11-22T14:32:00",
+                "collected_data": {
+                    "citizen_name": "Lakshmi Devi",
+                    "category": "Water supply",
+                    "description": "Main pipeline burst near community hall. Water flooding street.",
+                    "village_name": "Kallugopahalli",
+                    "ward_number": "Ward 1",
+                    "address": "Near Community Center",
+                    "tracking_id": "GS-2026-1002"
+                }
+            },
+            {
+                "phone_number": "+919845998877",
+                "current_step": "AWAITING_LOCATION",
+                "last_interaction_at": "2026-11-22T15:10:00",
+                "collected_data": {
+                    "citizen_name": "Gowramma",
+                    "category": "Garbage collection",
+                    "description": "Garbage not picked up near dairy circle for past 4 days."
+                }
+            },
+            {
+                "phone_number": "+919845665544",
+                "current_step": "AWAITING_CATEGORY",
+                "last_interaction_at": "2026-11-22T16:05:00",
+                "collected_data": {
+                    "citizen_name": "Manjunath"
+                }
+            }
+        ]
+
+    total_sessions = len(convs)
+    completed_sessions = sum(1 for c in convs if c.get("current_step") == "COMPLETED")
+    in_progress = total_sessions - completed_sessions
+    completion_rate = round((completed_sessions / total_sessions * 100), 1) if total_sessions > 0 else 0.0
+
+    return {
+        "total_sessions": total_sessions,
+        "completed_grievances": completed_sessions,
+        "in_progress_sessions": in_progress,
+        "completion_rate_percent": completion_rate,
+        "conversations": convs,
+        "recent_messages": msgs[-30:] if msgs else [],
+        "whatsapp_complaints": wa_complaints
+    }

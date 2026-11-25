@@ -4,7 +4,9 @@ Orchestrates database operations, AI classification, WhatsApp notifications,
 CRM updates, and analytics calculations.
 """
 import io
+import re
 import csv
+import uuid
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
@@ -27,25 +29,87 @@ logger = logging.getLogger(__name__)
 
 
 def _hydrate_complaint(record: Dict[str, Any]) -> ComplaintResponse:
-    store = get_demo_store()
     c_id = record["id"]
+    histories: List[StatusHistoryItem] = []
+    attachments: List[AttachmentItem] = []
 
-    # Retrieve history
-    histories = [
-        StatusHistoryItem(**h) for h in store["status_history"]
-        if h.get("complaint_id") == c_id
-    ]
-    # Sort history chronological
-    histories.sort(key=lambda x: str(x.created_at))
+    sb = get_db()
+    if sb:
+        try:
+            h_res = sb.table("complaint_status_history").select("*").eq("complaint_id", c_id).order("created_at").execute()
+            if h_res.data:
+                histories = [StatusHistoryItem(**h) for h in h_res.data]
+            a_res = sb.table("complaint_attachments").select("*").eq("complaint_id", c_id).execute()
+            if a_res.data:
+                attachments = [AttachmentItem(**a) for a in a_res.data]
+        except Exception as e:
+            logger.debug(f"Could not load history from Supabase: {e}")
 
-    # Retrieve attachments
-    attachments = [
-        AttachmentItem(**a) for a in store["attachments"]
-        if a.get("complaint_id") == c_id
-    ]
+    store = get_demo_store()
+    if not histories:
+        histories = [
+            StatusHistoryItem(**h) for h in store.get("status_history", [])
+            if h.get("complaint_id") == c_id
+        ]
+        histories.sort(key=lambda x: str(x.created_at))
+
+    if not attachments:
+        attachments = [
+            AttachmentItem(**a) for a in store.get("attachments", [])
+            if a.get("complaint_id") == c_id
+        ]
+
+    # Resolve image_url: from record, or complaint attachments
+    image_url = record.get("image_url")
+    if not image_url and attachments:
+        c_atts = [a.file_url for a in attachments if a.attachment_type == "complaint"]
+        if c_atts:
+            image_url = c_atts[0]
+        elif attachments:
+            image_url = attachments[0].file_url
+
+    # Resolve proof_url: from record, or status history, or resolution attachments
+    proof_url = record.get("proof_url")
+    if not proof_url:
+        for h in reversed(histories):
+            if h.proof_url:
+                proof_url = h.proof_url
+                break
+    if not proof_url and attachments:
+        r_atts = [a.file_url for a in attachments if a.attachment_type == "resolution"]
+        if r_atts:
+            proof_url = r_atts[-1]
+
+    # Resolve structured location: district, taluk, pincode, landmark
+    district = record.get("district")
+    taluk = record.get("taluk")
+    pincode = record.get("pincode")
+    landmark = record.get("landmark")
+    raw_addr = record.get("address", "")
+    clean_addr = raw_addr
+
+    # If structured fields not direct, check if encoded in address: [District|Taluk|Pincode|Landmark] Clean Address
+    if not district or not taluk:
+        match = re.match(r"^\[(.*?)\|(.*?)\|(.*?)\|(.*?)\]\s*(.*)$", raw_addr)
+        if match:
+            parsed_d, parsed_t, parsed_p, parsed_l, remaining_addr = match.groups()
+            district = district or (parsed_d if parsed_d else None)
+            taluk = taluk or (parsed_t if parsed_t else None)
+            pincode = pincode or (parsed_p if parsed_p else None)
+            landmark = landmark or (parsed_l if parsed_l else None)
+            clean_addr = remaining_addr if remaining_addr else raw_addr
+
+    rec_copy = dict(record)
+    rec_copy["district"] = district
+    rec_copy["taluk"] = taluk
+    rec_copy["pincode"] = pincode
+    rec_copy["landmark"] = landmark
+    rec_copy["address"] = clean_addr
+    rec_copy["image_url"] = image_url
+    rec_copy["proof_url"] = proof_url
 
     return ComplaintResponse(
-        **record,
+        **rec_copy,
         status_history=histories,
         attachments=attachments
     )
@@ -59,11 +123,25 @@ class ComplaintService:
         Runs Gemini AI classification automatically.
         """
         tracking_id = get_next_tracking_id()
-        complaint_id = f"c-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{tracking_id}"
+        complaint_id = str(uuid.uuid4())
         now_iso = datetime.utcnow().isoformat()
 
         # Run AI Classification
         ai_res = await classify_complaint_ai(data.description, data.category)
+
+        # Validate Priority to ensure it matches the Postgres complaint_priority enum
+        valid_priorities = {"Low", "Medium", "High", "Critical"}
+        raw_prio = ai_res.get("priority")
+        validated_prio = raw_prio if raw_prio in valid_priorities else "Medium"
+
+        # Structured location encoding for backward-compatible address storage
+        full_address = data.address
+        if data.district or data.taluk or data.pincode or data.landmark:
+            d_str = data.district or ""
+            t_str = data.taluk or ""
+            p_str = data.pincode or ""
+            l_str = data.landmark or ""
+            full_address = f"[{d_str}|{t_str}|{p_str}|{l_str}] {data.address}"
 
         record = {
             "id": complaint_id,
@@ -74,14 +152,18 @@ class ComplaintService:
             "description": data.description,
             "village_name": data.village_name,
             "ward_number": data.ward_number,
-            "address": data.address,
+            "address": full_address,
             "latitude": data.latitude,
             "longitude": data.longitude,
             "source": data.source,
+            "district": data.district,
+            "taluk": data.taluk,
+            "pincode": data.pincode,
+            "landmark": data.landmark,
             "status": "Submitted",
-            "priority": ai_res.get("priority", "Medium"),
+            "priority": validated_prio,
             "ai_category": ai_res.get("category"),
-            "ai_priority": ai_res.get("priority"),
+            "ai_priority": validated_prio,
             "ai_department": ai_res.get("department"),
             "ai_summary": ai_res.get("summary"),
             "ai_confidence": ai_res.get("confidence", 0.90),
@@ -101,10 +183,49 @@ class ComplaintService:
         # Store in Supabase if live
         sb = get_db()
         if sb:
-            try:
-                sb.table("complaints").insert(record).execute()
-            except Exception as e:
-                logger.error(f"Supabase complaints insert error: {e}")
+            max_insert_attempts = 5
+            for attempt in range(max_insert_attempts):
+                try:
+                    # Attempt insert with full record (works if district/taluk columns exist in Supabase)
+                    res = sb.table("complaints").insert(record).execute()
+                    logger.info(f"Supabase complaint successfully inserted: {complaint_id} ({record['tracking_id']})")
+                    break
+                except Exception as e:
+                    err_str = str(e).lower()
+                    # If duplicate tracking_id constraint is hit, auto-increment tracking_id and retry
+                    if "23505" in err_str or "duplicate key" in err_str or "complaints_tracking_id_key" in err_str:
+                        new_tid = get_next_tracking_id()
+                        logger.warning(f"Tracking ID collision ({record['tracking_id']}), auto-incrementing to {new_tid} (attempt {attempt+1}/{max_insert_attempts})")
+                        record["tracking_id"] = new_tid
+                        continue
+
+                    # Fallback to inserting standard schema columns (full_address still carries structured data safely)
+                    logger.warning(f"Supabase complaints direct insert notice ({e}), retrying with core columns...")
+                    core_keys = {
+                        "id", "tracking_id", "citizen_name", "citizen_phone", "category", "description",
+                        "village_name", "ward_number", "address", "latitude", "longitude", "source",
+                        "status", "priority", "ai_category", "ai_priority", "ai_department", "ai_summary",
+                        "ai_confidence", "ai_reviewed", "ai_overridden", "assigned_department_id",
+                        "assigned_department_name", "assigned_officer_id", "assigned_officer_name",
+                        "resolution_remarks", "rejection_reason", "resolved_at", "created_at", "updated_at"
+                    }
+                    fallback_record = {k: v for k, v in record.items() if k in core_keys}
+                    try:
+                        sb.table("complaints").insert(fallback_record).execute()
+                        logger.info(f"Supabase complaint inserted with core columns: {complaint_id} ({fallback_record['tracking_id']})")
+                        break
+                    except Exception as e2:
+                        err_str2 = str(e2).lower()
+                        if ("23505" in err_str2 or "duplicate key" in err_str2 or "complaints_tracking_id_key" in err_str2) and attempt < max_insert_attempts - 1:
+                            new_tid = get_next_tracking_id()
+                            logger.warning(f"Tracking ID collision on core insert ({record['tracking_id']}), auto-incrementing to {new_tid} (attempt {attempt+1}/{max_insert_attempts})")
+                            record["tracking_id"] = new_tid
+                            continue
+
+                        logger.warning(f"Supabase complaints insert notice: {e2}. Persisting to local repository.")
+                        if not settings.DEMO_MODE and "getaddrinfo" not in str(e2) and "Connect" not in str(e2) and "timed out" not in str(e2):
+                            raise
+                        break
 
         # Store in memory store
         store = get_demo_store()
@@ -112,7 +233,7 @@ class ComplaintService:
 
         # Initial Status History entry
         history_entry = {
-            "id": f"h-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "id": str(uuid.uuid4()),
             "complaint_id": complaint_id,
             "previous_status": None,
             "new_status": "Submitted",
@@ -124,14 +245,15 @@ class ComplaintService:
         if sb:
             try:
                 sb.table("complaint_status_history").insert(history_entry).execute()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Supabase status history insert error: {e}")
         store["status_history"].append(history_entry)
 
         # Attach image if provided
         if data.image_url:
+            record["image_url"] = data.image_url
             att = {
-                "id": f"att-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                "id": str(uuid.uuid4()),
                 "complaint_id": complaint_id,
                 "file_name": "citizen_upload.jpg",
                 "file_url": data.image_url,
@@ -142,8 +264,8 @@ class ComplaintService:
             if sb:
                 try:
                     sb.table("complaint_attachments").insert(att).execute()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"Supabase attachment insert error: {e}")
             store["attachments"].append(att)
 
         return _hydrate_complaint(record)
@@ -160,7 +282,47 @@ class ComplaintService:
     ) -> List[ComplaintResponse]:
         """
         Searches, filters and sorts complaints for the Admin CRM.
+        Reads live from Supabase when configured, falling back to demo store if disconnected.
         """
+        sb = get_db()
+        if sb:
+            try:
+                query = sb.table("complaints").select("*")
+                if category and category != "All":
+                    query = query.eq("category", category)
+                if department and department != "All":
+                    query = query.eq("assigned_department_name", department)
+                if status and status != "All":
+                    query = query.eq("status", status)
+                if source and source != "All":
+                    query = query.eq("source", source)
+                if priority and priority != "All":
+                    query = query.eq("priority", priority)
+
+                if sort_by == "oldest":
+                    query = query.order("created_at", desc=False)
+                elif sort_by == "priority":
+                    query = query.order("priority")
+                else:
+                    query = query.order("created_at", desc=True)
+
+                res = query.execute()
+                if res.data is not None:
+                    results = res.data
+                    if search:
+                        q = search.lower().strip()
+                        results = [
+                            c for c in results
+                            if q in str(c.get("tracking_id", "")).lower()
+                            or q in str(c.get("citizen_name", "")).lower()
+                            or q in str(c.get("citizen_phone", "")).lower()
+                            or q in str(c.get("village_name", "")).lower()
+                            or q in str(c.get("description", "")).lower()
+                        ]
+                    return [_hydrate_complaint(c) for c in results]
+            except Exception as e:
+                logger.warning(f"Supabase live get_complaints failed: {e}. Falling back to demo store.")
+
         store = get_demo_store()
         results = list(store["complaints"])
 
@@ -203,8 +365,17 @@ class ComplaintService:
         return [_hydrate_complaint(c) for c in results]
 
     def get_complaint_by_id(self, complaint_id_or_tracking_id: str) -> Optional[ComplaintResponse]:
-        store = get_demo_store()
         key = complaint_id_or_tracking_id.strip()
+        sb = get_db()
+        if sb:
+            try:
+                res = sb.table("complaints").select("*").or_(f"id.eq.{key},tracking_id.ilike.{key}").execute()
+                if res.data and len(res.data) > 0:
+                    return _hydrate_complaint(res.data[0])
+            except Exception as e:
+                logger.debug(f"Supabase get_complaint_by_id error: {e}")
+
+        store = get_demo_store()
         match = next(
             (c for c in store["complaints"] if c["id"] == key or c["tracking_id"].upper() == key.upper()),
             None
@@ -217,8 +388,25 @@ class ComplaintService:
         """
         Citizen tracking lookup. If phone is provided, verifies match against registered phone.
         """
-        store = get_demo_store()
         tid = tracking_id.strip().upper()
+        sb = get_db()
+        if sb:
+            try:
+                res = sb.table("complaints").select("*").ilike("tracking_id", tid).execute()
+                if res.data and len(res.data) > 0:
+                    match = res.data[0]
+                    if phone:
+                        clean_input = "".join(filter(str.isdigit, phone))
+                        clean_db = "".join(filter(str.isdigit, match["citizen_phone"]))
+                        if clean_input[-10:] != clean_db[-10:]:
+                            raise ValueError("Mobile number does not match registered complaint record.")
+                    return _hydrate_complaint(match)
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.debug(f"Supabase track_complaint error: {e}")
+
+        store = get_demo_store()
         match = next((c for c in store["complaints"] if c["tracking_id"].upper() == tid), None)
         if not match:
             return None
@@ -226,7 +414,6 @@ class ComplaintService:
         if phone:
             clean_input = "".join(filter(str.isdigit, phone))
             clean_db = "".join(filter(str.isdigit, match["citizen_phone"]))
-            # Match last 10 digits
             if clean_input[-10:] != clean_db[-10:]:
                 raise ValueError("Mobile number does not match registered complaint record.")
 
@@ -236,8 +423,19 @@ class ComplaintService:
         """
         Admin status update. Adds history entry, updates proof/remarks, and sends WhatsApp notification.
         """
+        comp = None
+        sb = get_db()
+        if sb:
+            try:
+                res = sb.table("complaints").select("*").eq("id", complaint_id).execute()
+                if res.data and len(res.data) > 0:
+                    comp = res.data[0]
+            except Exception as e:
+                logger.debug(f"Supabase fetch complaint for status update error: {e}")
+
         store = get_demo_store()
-        comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
+        if not comp:
+            comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
         if not comp:
             raise ValueError(f"Complaint not found with ID {complaint_id}")
 
@@ -255,7 +453,7 @@ class ComplaintService:
 
         # Add history entry
         history_entry = {
-            "id": f"h-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "id": str(uuid.uuid4()),
             "complaint_id": complaint_id,
             "previous_status": old_status,
             "new_status": req.status,
@@ -269,7 +467,7 @@ class ComplaintService:
         # Resolution proof attachment
         if req.proof_url:
             att = {
-                "id": f"att-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                "id": str(uuid.uuid4()),
                 "complaint_id": complaint_id,
                 "file_name": "resolution_proof.jpg",
                 "file_url": req.proof_url,
@@ -278,9 +476,13 @@ class ComplaintService:
                 "uploaded_at": now_iso
             }
             store["attachments"].append(att)
+            if sb:
+                try:
+                    sb.table("complaint_attachments").insert(att).execute()
+                except Exception:
+                    pass
 
         # Sync with Supabase if live
-        sb = get_db()
         if sb:
             try:
                 sb.table("complaints").update({
@@ -293,6 +495,13 @@ class ComplaintService:
                 sb.table("complaint_status_history").insert(history_entry).execute()
             except Exception as e:
                 logger.error(f"Supabase update error: {e}")
+
+        # Update in demo store as well if it's there
+        store_comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
+        if store_comp:
+            store_comp.update(comp)
+        else:
+            store["complaints"].append(comp)
 
         # Send WhatsApp Notification to Citizen
         if req.notify_citizen and comp.get("citizen_phone"):
@@ -310,8 +519,19 @@ class ComplaintService:
         """
         Assigns grievance to a specific department and officer.
         """
+        comp = None
+        sb = get_db()
+        if sb:
+            try:
+                res = sb.table("complaints").select("*").eq("id", complaint_id).execute()
+                if res.data and len(res.data) > 0:
+                    comp = res.data[0]
+            except Exception as e:
+                logger.debug(f"Supabase fetch complaint for assign error: {e}")
+
         store = get_demo_store()
-        comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
+        if not comp:
+            comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
         if not comp:
             raise ValueError(f"Complaint not found with ID {complaint_id}")
 
@@ -330,7 +550,7 @@ class ComplaintService:
 
         # Add history entry
         history_entry = {
-            "id": f"h-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "id": str(uuid.uuid4()),
             "complaint_id": complaint_id,
             "previous_status": old_status,
             "new_status": comp["status"],
@@ -342,7 +562,6 @@ class ComplaintService:
         store["status_history"].append(history_entry)
 
         # Sync with Supabase
-        sb = get_db()
         if sb:
             try:
                 sb.table("complaints").update({
@@ -355,6 +574,12 @@ class ComplaintService:
                 sb.table("complaint_status_history").insert(history_entry).execute()
             except Exception as e:
                 logger.error(f"Supabase assign error: {e}")
+
+        store_comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
+        if store_comp:
+            store_comp.update(comp)
+        else:
+            store["complaints"].append(comp)
 
         # Send WhatsApp Notification
         if req.notify_citizen and comp.get("citizen_phone"):
@@ -372,8 +597,19 @@ class ComplaintService:
         """
         Allows administrator to review and modify AI-generated classification.
         """
+        comp = None
+        sb = get_db()
+        if sb:
+            try:
+                res = sb.table("complaints").select("*").eq("id", complaint_id).execute()
+                if res.data and len(res.data) > 0:
+                    comp = res.data[0]
+            except Exception as e:
+                logger.debug(f"Supabase fetch complaint for AI override error: {e}")
+
         store = get_demo_store()
-        comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
+        if not comp:
+            comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
         if not comp:
             raise ValueError(f"Complaint not found with ID {complaint_id}")
 
@@ -390,7 +626,6 @@ class ComplaintService:
         comp["ai_overridden"] = True
         comp["updated_at"] = datetime.utcnow().isoformat()
 
-        sb = get_db()
         if sb:
             try:
                 sb.table("complaints").update({
@@ -405,12 +640,18 @@ class ComplaintService:
             except Exception as e:
                 logger.error(f"Supabase AI override error: {e}")
 
+        store_comp = next((c for c in store["complaints"] if c["id"] == complaint_id), None)
+        if store_comp:
+            store_comp.update(comp)
+        else:
+            store["complaints"].append(comp)
+
         return _hydrate_complaint(comp)
 
     def add_attachment(self, complaint_id: str, file_name: str, file_url: str, file_type: str, attachment_type: str = "complaint") -> AttachmentItem:
         store = get_demo_store()
         att = {
-            "id": f"att-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "id": str(uuid.uuid4()),
             "complaint_id": complaint_id,
             "file_name": file_name,
             "file_url": file_url,
@@ -432,9 +673,22 @@ class ComplaintService:
     def get_analytics(self) -> Dict[str, Any]:
         """
         Calculates real dynamic metrics for the Recharts dashboard.
+        Reads live from Supabase when available, falling back to demo store.
         """
-        store = get_demo_store()
-        complaints = store["complaints"]
+        complaints = None
+        sb = get_db()
+        if sb:
+            try:
+                res = sb.table("complaints").select("*").execute()
+                if res.data is not None:
+                    complaints = res.data
+            except Exception as e:
+                logger.debug(f"Supabase get_analytics error: {e}")
+
+        if complaints is None:
+            store = get_demo_store()
+            complaints = store["complaints"]
+
         total = len(complaints)
 
         # Status counts
@@ -514,9 +768,21 @@ class ComplaintService:
     def export_csv(self) -> str:
         """
         Exports complaints table to standard CSV format.
+        Reads live from Supabase when available, falling back to demo store.
         """
-        store = get_demo_store()
-        complaints = store["complaints"]
+        complaints = None
+        sb = get_db()
+        if sb:
+            try:
+                res = sb.table("complaints").select("*").order("created_at", desc=True).execute()
+                if res.data is not None:
+                    complaints = res.data
+            except Exception as e:
+                logger.debug(f"Supabase export_csv error: {e}")
+
+        if complaints is None:
+            store = get_demo_store()
+            complaints = store["complaints"]
 
         output = io.StringIO()
         fieldnames = [

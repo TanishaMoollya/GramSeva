@@ -234,33 +234,104 @@ If you did not attempt this login, contact your Primary Administrator immediatel
     return send_email(to_email, subject, _get_base_template(content_html, subject), text_content)
 
 
+def send_officer_verification_email(
+    to_email: str,
+    full_name: str,
+    department_name: str,
+    employee_id: str,
+    raw_token: str
+) -> bool:
+    """
+    Sends email confirmation link to a newly registered Department Officer.
+    """
+    verify_url = f"{settings.FRONTEND_URL}/admin/verify-officer?token={raw_token}"
+    subject = f"Verify Your GramSeva Department Officer Email ({department_name})"
+
+    content_html = f"""
+      <h2 style="margin-top: 0; color: #0f172a; font-size: 20px;">Verify Your Official Email Address</h2>
+      <p>Dear <strong>{full_name}</strong>,</p>
+      <p>Thank you for registering as a Department Officer on the <strong>GramSeva</strong> Public Grievance Management Platform.</p>
+      
+      <div class="info-card">
+        <strong>Officer Registration Details:</strong><br>
+        &bull; <strong>Department:</strong> {department_name}<br>
+        &bull; <strong>Employee ID:</strong> {employee_id}<br>
+        &bull; <strong>Official Email:</strong> {to_email}<br>
+        &bull; <strong>Process:</strong> Email Verification &rarr; Panchayat Officer Approval
+      </div>
+
+      <p>To confirm ownership of this email address and submit your profile for Panchayat Officer approval, click below:</p>
+
+      <div class="btn-container">
+        <a href="{verify_url}" class="btn">Verify Official Email Address</a>
+      </div>
+
+      <p style="font-size: 13px; color: #64748b;">
+        Or open this link directly in your browser:<br>
+        <a href="{verify_url}" class="link-alt">{verify_url}</a>
+      </p>
+
+      <p style="font-size: 12px; color: #94a3b8; margin-top: 24px;">
+        Once verified, the Main Admin (Panchayat Development Officer) will approve your departmental access credentials.
+      </p>
+    """
+
+    text_content = f"""
+Verify Your GramSeva Department Officer Email
+
+Dear {full_name},
+Thank you for registering as a Department Officer for {department_name} (Employee ID: {employee_id}).
+
+Click the link below to verify your email address:
+{verify_url}
+
+After verification, your account will be activated once approved by the Panchayat Development Officer.
+"""
+    return send_email(to_email, subject, _get_base_template(content_html, subject), text_content)
+
+
 def send_admin_invitation_email(
     to_email: str,
     full_name: str,
     role: str,
     raw_token: str,
-    invited_by: str
+    invited_by: str,
+    department_name: Optional[str] = None,
+    employee_id: Optional[str] = None
 ) -> bool:
     """
-    Sends the 24-hour invitation link to a newly invited administrator.
+    Sends the 24-hour invitation link to a newly invited administrator or department officer.
     """
     accept_url = f"{settings.FRONTEND_URL}/admin/accept-invitation?token={raw_token}"
-    role_display = "Primary Administrator" if role == "primary_admin" else "Department Administrator"
-    subject = f"Invitation to Join GramSeva Administrator Portal ({role_display})"
+    if role == "primary_admin":
+        role_display = "Primary Administrator (Panchayat Officer)"
+        subject = "Invitation to Join GramSeva as Primary Administrator"
+    elif role == "department_officer":
+        dept_str = f" ({department_name})" if department_name else ""
+        role_display = f"Department Officer{dept_str}"
+        subject = f"Official Invitation: Join GramSeva as Department Officer{dept_str}"
+    else:
+        role_display = f"Administrator ({department_name or 'General Administration'})"
+        subject = "Invitation to Join GramSeva Administrator Portal"
+
+    dept_detail_html = f"&bull; <strong>Department:</strong> {department_name}<br>" if department_name else ""
+    emp_detail_html = f"&bull; <strong>Employee ID:</strong> {employee_id}<br>" if employee_id else ""
 
     content_html = f"""
-      <h2 style="margin-top: 0; color: #0f172a; font-size: 20px;">You're Invited to GramSeva Admin Portal</h2>
+      <h2 style="margin-top: 0; color: #0f172a; font-size: 20px;">You're Invited to GramSeva Official Portal</h2>
       <p>Dear <strong>{full_name}</strong>,</p>
-      <p>You have been invited by <strong>{invited_by}</strong> to join the GramSeva Public Grievance CRM as an authorized <strong>{role_display}</strong>.</p>
+      <p>You have been officially invited by <strong>{invited_by}</strong> to join the GramSeva Public Administration System as an authorized <strong>{role_display}</strong>.</p>
       
       <div class="info-card">
-        <strong>Invitation Details:</strong><br>
+        <strong>Official Authorization Details:</strong><br>
         &bull; <strong>Assigned Role:</strong> {role_display}<br>
-        &bull; <strong>Registered Email:</strong> {to_email}<br>
-        &bull; <strong>Expires In:</strong> 24 hours
+        {dept_detail_html}
+        {emp_detail_html}
+        &bull; <strong>Official Email:</strong> {to_email}<br>
+        &bull; <strong>Link Validity:</strong> 24 hours
       </div>
 
-      <p>To activate your administrator profile and set up your permanent secure password, please click below:</p>
+      <p>To activate your official profile and set up your permanent secure password, please click below:</p>
 
       <div class="btn-container">
         <a href="{accept_url}" class="btn">Accept Invitation & Set Password</a>
@@ -272,12 +343,12 @@ def send_admin_invitation_email(
       </p>
 
       <p style="font-size: 12px; color: #94a3b8; margin-top: 24px;">
-        This invitation is confidential and intended solely for {to_email}. Do not forward or share this link.
+        This official invitation is intended solely for {to_email}. Once you set your password, you can sign in directly to manage assigned departmental grievances.
       </p>
     """
 
     text_content = f"""
-Invitation to Join GramSeva Administrator Portal
+Invitation to Join GramSeva Portal
 
 Dear {full_name},
 You have been invited by {invited_by} to join GramSeva as a {role_display}.
@@ -333,3 +404,4 @@ Click the link below to reset your password (valid for 15 minutes):
 If you did not request this, please ignore this message.
 """
     return send_email(to_email, subject, _get_base_template(content_html, subject), text_content)
+

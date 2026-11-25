@@ -46,6 +46,7 @@ export default function ComplaintMap({
         Marker: RL.Marker,
         Popup: RL.Popup,
         useMapEvents: RL.useMapEvents,
+        useMap: RL.useMap,
         L,
       });
     });
@@ -65,7 +66,7 @@ export default function ComplaintMap({
     );
   }
 
-  const { MapContainer, TileLayer, Marker, Popup, useMapEvents, L } = MapComponents;
+  const { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, L } = MapComponents;
 
   // Custom colored marker icons for complaint statuses
   const getStatusIcon = (status: string) => {
@@ -91,7 +92,20 @@ export default function ComplaintMap({
     });
   };
 
-  // Click handler component for selecting location
+  // Recenter map view when selected coordinates change
+  function MapRecenter({ target }: { target: { lat: number; lng: number } | null }) {
+    const map = useMap();
+    useEffect(() => {
+      if (target) {
+        map.setView([target.lat, target.lng], Math.max(map.getZoom(), 14), {
+          animate: true,
+        });
+      }
+    }, [target, map]);
+    return null;
+  }
+
+  // Click & Drag handler component for selecting location
   function LocationMarker() {
     useMapEvents({
       click(e: any) {
@@ -104,12 +118,29 @@ export default function ComplaintMap({
     if (!selectedLocation) return null;
 
     return (
-      <Marker position={[selectedLocation.lat, selectedLocation.lng]}>
+      <Marker
+        position={[selectedLocation.lat, selectedLocation.lng]}
+        draggable={interactiveSelect}
+        eventHandlers={{
+          dragend(e: any) {
+            if (interactiveSelect && onSelectLocation) {
+              const marker = e.target;
+              if (marker != null) {
+                const latLng = marker.getLatLng();
+                onSelectLocation({ lat: latLng.lat, lng: latLng.lng });
+              }
+            }
+          },
+        }}
+      >
         <Popup>
           <div className="text-xs p-1">
-            <p className="font-semibold text-slate-800">Selected Location</p>
-            <p className="text-slate-600">
-              {selectedLocation.lat.toFixed(4)}, {selectedLocation.lng.toFixed(4)}
+            <p className="font-bold text-slate-800">Pin Location</p>
+            <p className="text-[11px] text-slate-600 font-mono">
+              {selectedLocation.lat.toFixed(5)}, {selectedLocation.lng.toFixed(5)}
+            </p>
+            <p className="text-[10px] text-emerald-700 font-semibold mt-1">
+              Drag pin to refine location
             </p>
           </div>
         </Popup>
@@ -129,6 +160,8 @@ export default function ComplaintMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+
+        <MapRecenter target={selectedLocation || null} />
 
         {interactiveSelect && <LocationMarker />}
 

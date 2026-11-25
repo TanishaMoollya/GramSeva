@@ -59,10 +59,7 @@ export default function Footer() {
                 <Mail className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>support@gramseva.gov.in</span>
               </div>
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>Harohalli Gram Panchayat Office, Ramanagara District, Karnataka — 562112</span>
-              </div>
+              
             </div>
           </div>
         </div>

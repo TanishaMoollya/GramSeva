@@ -28,9 +28,15 @@ class ComplaintBase(BaseModel):
     description: str = Field(..., min_length=10, max_length=2000, description="Detailed complaint description")
     village_name: str = Field(..., min_length=2, max_length=100, description="Name of village / Gram Panchayat")
     ward_number: str = Field(..., min_length=1, max_length=20, description="Ward or block number")
-    address: str = Field(..., min_length=3, max_length=300, description="Specific location or landmark")
+    address: str = Field(..., min_length=3, max_length=500, description="Specific location or landmark")
     latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
     longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+    
+    # Structured Location Breakdown (Karnataka iPGRS Standard)
+    district: Optional[str] = None
+    taluk: Optional[str] = None
+    pincode: Optional[str] = None
+    landmark: Optional[str] = None
 
     @field_validator("citizen_phone")
     @classmethod
@@ -111,6 +117,10 @@ class ComplaintResponse(ComplaintBase):
     status_history: List[StatusHistoryItem] = []
     attachments: List[AttachmentItem] = []
     
+    # Media Evidence URLs (Citizen Upload & Resolution Proof)
+    image_url: Optional[str] = None
+    proof_url: Optional[str] = None
+
     # Timestamps
     created_at: datetime
     updated_at: datetime

@@ -62,12 +62,45 @@ def require_primary_admin(
     admin: Dict[str, Any] = Depends(get_current_verified_admin)
 ) -> Dict[str, Any]:
     """
-    Guarantees that only a Primary Administrator can perform administrative management
-    such as invitations, suspensions, and viewing audit logs.
+    Guarantees that only a Primary / Main Administrator (Panchayat Officer) can perform
+    system-wide administrative management such as officer approvals and audit logs.
     """
-    if admin.get("role") != "primary_admin":
+    if admin.get("role") not in ["primary_admin", "main_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access restricted: Requires Primary Administrator privileges."
+            detail="Access restricted: Requires Main Admin (Panchayat Officer) privileges."
         )
     return admin
+
+
+def require_department_officer(
+    admin: Dict[str, Any] = Depends(get_current_verified_admin)
+) -> Dict[str, Any]:
+    """
+    Ensures the user is an authorized Department Officer or Main Admin.
+    """
+    if admin.get("role") not in ["department_officer", "primary_admin", "main_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted: Requires Department Officer privileges."
+        )
+    return admin
+
+
+def get_optional_admin(
+    authorization: Optional[str] = Header(None, alias="Authorization")
+) -> Optional[Dict[str, Any]]:
+    """
+    Extracts admin claims if present, otherwise returns None.
+    """
+    if not authorization:
+        return None
+    try:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            payload = decode_access_token(parts[1])
+            if payload and payload.get("verified"):
+                return payload
+    except Exception:
+        pass
+    return None

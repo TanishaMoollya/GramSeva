@@ -17,7 +17,9 @@ import {
   FileText,
   ExternalLink,
   ShieldCheck,
-  Check
+  Check,
+  Navigation,
+  Camera
 } from 'lucide-react';
 import { trackComplaint } from '@/lib/api';
 import { Complaint, ComplaintStatus } from '@/types';
@@ -273,7 +275,7 @@ function TrackComplaintContent() {
                 </div>
               )}
 
-              {/* Metadata Grid */}
+              {/* Metadata Grid with Detailed Civic Location */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                 <div>
                   <span className="text-slate-500 block mb-0.5">Assigned Department</span>
@@ -288,11 +290,32 @@ function TrackComplaintContent() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block mb-0.5">Panchayat Location</span>
+                  <span className="text-slate-500 block mb-0.5">District & Taluk</span>
                   <span className="font-bold text-slate-800">
-                    {complaint.village_name}, {complaint.ward_number}
+                    {complaint.district || 'Karnataka'}{complaint.taluk ? ` / ${complaint.taluk}` : ''}
                   </span>
                 </div>
+              </div>
+
+              {/* Panchayat & Landmark Info Bar */}
+              <div className="mt-3 p-3 bg-white rounded-xl border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-gov-primary shrink-0" />
+                  <span className="text-slate-700">
+                    <b>{complaint.village_name}</b> ({complaint.ward_number}), {complaint.address} {complaint.pincode ? `- ${complaint.pincode}` : ''}
+                  </span>
+                </div>
+                {complaint.latitude && complaint.longitude && (
+                  <a
+                    href={`https://maps.google.com/?q=${complaint.latitude},${complaint.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gov-primary hover:underline font-bold inline-flex items-center gap-1 shrink-0"
+                  >
+                    <Navigation className="w-3.5 h-3.5" />
+                    <span>View on Google Maps</span>
+                  </a>
+                )}
               </div>
             </div>
 
@@ -306,12 +329,38 @@ function TrackComplaintContent() {
                   {complaint.description}
                 </p>
                 <div className="flex items-center gap-4 text-xs text-slate-500 mt-2">
-                  <span>📍 Landmark: <b>{complaint.address}</b></span>
+                  <span>📍 Specific Location: <b>{complaint.address}</b></span>
                   <span>📅 Submitted: <b>{new Date(complaint.created_at).toLocaleDateString()}</b></span>
                 </div>
+
+                {/* Citizen Evidence Photo */}
+                {(complaint.image_url || complaint.attachments.some(a => a.attachment_type === 'complaint')) && (
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <span className="text-xs font-bold text-slate-700 block mb-2 flex items-center gap-1.5">
+                      <Camera className="w-4 h-4 text-gov-primary" />
+                      <span>Citizen Uploaded Photo Evidence:</span>
+                    </span>
+                    <div className="rounded-xl overflow-hidden border border-slate-300 shadow-sm max-w-sm bg-slate-900 group relative">
+                      <img
+                        src={complaint.image_url || complaint.attachments.find(a => a.attachment_type === 'complaint')?.file_url}
+                        alt="Citizen Uploaded Evidence"
+                        className="w-full h-48 object-cover group-hover:opacity-90 transition"
+                      />
+                      <a
+                        href={complaint.image_url || complaint.attachments.find(a => a.attachment_type === 'complaint')?.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 bg-white text-[11px] text-gov-primary font-bold hover:underline flex items-center justify-between"
+                      >
+                        <span>View Original Upload</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Resolution Remarks & Proof Photo */}
+              {/* Resolution Remarks & Verified Proof Photo */}
               {complaint.status === 'Resolved' && (
                 <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-4">
                   <div className="flex items-center gap-2 font-bold text-sm">
@@ -319,24 +368,35 @@ function TrackComplaintContent() {
                     <span>Official Resolution Confirmation</span>
                   </div>
                   <p className="text-xs leading-relaxed text-emerald-800">
-                    <b>Resolution Remarks:</b> {complaint.resolution_remarks || 'The field crew has resolved the reported civic issue.'}
+                    <b>Resolution Remarks:</b> {complaint.resolution_remarks || 'The designated department field crew has resolved the reported civic issue.'}
                   </p>
 
                   {/* Resolution Proof Photo */}
-                  {complaint.attachments.filter((a) => a.attachment_type === 'resolution').length > 0 && (
+                  {(complaint.proof_url || complaint.attachments.some((a) => a.attachment_type === 'resolution')) && (
                     <div className="pt-2">
-                      <span className="text-xs font-bold text-emerald-900 block mb-2">Resolution Photo Proof:</span>
+                      <span className="text-xs font-bold text-emerald-900 block mb-2">
+                        Official Resolution Proof Photo (Verified):
+                      </span>
                       <div className="flex gap-4">
-                        {complaint.attachments
-                          .filter((a) => a.attachment_type === 'resolution')
-                          .map((att) => (
-                            <div key={att.id || att.file_url} className="rounded-lg overflow-hidden border border-emerald-300 shadow-sm max-w-xs">
-                              <img src={att.file_url} alt="Resolution Proof" className="w-full h-44 object-cover" />
-                              <div className="p-2 bg-white text-[11px] text-slate-600">
-                                Proof verified on {new Date(att.uploaded_at).toLocaleDateString()}
-                              </div>
-                            </div>
-                          ))}
+                        <div className="rounded-xl overflow-hidden border border-emerald-300 shadow-sm max-w-xs bg-slate-900">
+                          <img
+                            src={complaint.proof_url || complaint.attachments.find((a) => a.attachment_type === 'resolution')?.file_url}
+                            alt="Resolution Proof"
+                            className="w-full h-48 object-cover"
+                          />
+                          <div className="p-2 bg-white text-[11px] text-slate-600 flex items-center justify-between">
+                            <span className="font-semibold text-emerald-800">Field Work Completed</span>
+                            <a
+                              href={complaint.proof_url || complaint.attachments.find((a) => a.attachment_type === 'resolution')?.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-emerald-700 hover:underline font-bold inline-flex items-center gap-1"
+                            >
+                              <span>View Full Proof</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}

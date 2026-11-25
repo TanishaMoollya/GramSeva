@@ -16,6 +16,8 @@ function AcceptInvitationContent() {
     full_name: string;
     role: string;
     department_name: string;
+    department_code?: string;
+    employee_id?: string;
     invited_by: string;
   } | null>(null);
 
@@ -117,14 +119,20 @@ function AcceptInvitationContent() {
             </div>
             <h2 className="text-xl font-bold text-slate-900">Account Activated Successfully!</h2>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Your administrator profile is now active. As mandated by security policy, please sign in with your email and password to receive your single-use verification link.
+              {invitationData?.role === 'department_officer'
+                ? 'Your Department Officer profile is now active in Supabase. You can now sign in using your official email or employee ID and the password you created.'
+                : 'Your administrator profile is now active. As mandated by security policy, please sign in with your email and password to receive your single-use verification link.'}
             </p>
             <Link
               href="/admin/login"
               className="w-full bg-gov-primary hover:bg-blue-900 text-white font-bold py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2 text-sm mt-4"
             >
               <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>Proceed to Administrator Sign In</span>
+              <span>
+                {invitationData?.role === 'department_officer'
+                  ? 'Proceed to Department Officer Sign In'
+                  : 'Proceed to Administrator Sign In'}
+              </span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -139,13 +147,28 @@ function AcceptInvitationContent() {
               <div className="flex justify-between">
                 <span className="text-slate-400">Assigned Role:</span>
                 <span className="font-semibold text-gov-primary">
-                  {invitationData.role === 'primary_admin' ? 'Primary Administrator' : 'Department Administrator'}
+                  {invitationData.role === 'primary_admin'
+                    ? 'Primary Administrator (Panchayat Officer)'
+                    : invitationData.role === 'department_officer'
+                    ? `Department Officer (${invitationData.department_name})`
+                    : 'Administrator'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Department:</span>
-                <span className="font-semibold text-slate-800">{invitationData.department_name}</span>
+                <span className="font-semibold text-slate-800">
+                  {invitationData.department_name}
+                  {invitationData.department_code ? ` [${invitationData.department_code}]` : ''}
+                </span>
               </div>
+              {invitationData.employee_id && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Employee ID:</span>
+                  <span className="font-mono font-bold text-slate-900 bg-slate-200/60 px-2 py-0.5 rounded text-[11px]">
+                    {invitationData.employee_id}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-slate-400">Invited By:</span>
                 <span className="text-slate-700">{invitationData.invited_by}</span>

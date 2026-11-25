@@ -4,6 +4,7 @@ Handles incoming webhooks, conversational grievance intake,
 status updates, tracking commands, and demo simulation.
 """
 import re
+import uuid
 import logging
 import httpx
 from typing import Dict, Any, Optional, Tuple
@@ -382,10 +383,14 @@ class WhatsAppService:
         Runs Gemini AI classification.
         """
         tracking_id = get_next_tracking_id()
-        complaint_id = f"c-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{tracking_id}"
+        complaint_id = str(uuid.uuid4())
 
         # Run AI classification
         ai_res = await classify_complaint_ai(data.get("description", ""), data.get("category", "Other public issues"))
+
+        valid_priorities = {"Low", "Medium", "High", "Critical"}
+        raw_prio = ai_res.get("priority")
+        validated_prio = raw_prio if raw_prio in valid_priorities else "Medium"
 
         record = {
             "id": complaint_id,
@@ -401,9 +406,9 @@ class WhatsAppService:
             "longitude": 77.4521,
             "source": "whatsapp",
             "status": "Submitted",
-            "priority": ai_res.get("priority", "Medium"),
+            "priority": validated_prio,
             "ai_category": ai_res.get("category"),
-            "ai_priority": ai_res.get("priority"),
+            "ai_priority": validated_prio,
             "ai_department": ai_res.get("department"),
             "ai_summary": ai_res.get("summary"),
             "ai_confidence": ai_res.get("confidence", 0.90),
@@ -422,17 +427,27 @@ class WhatsAppService:
         # Store in Supabase or demo store
         sb = get_db()
         if sb:
-            try:
-                sb.table("complaints").insert(record).execute()
-            except Exception as e:
-                logger.error(f"Failed to insert WhatsApp complaint into Supabase: {e}")
+            for attempt in range(5):
+                try:
+                    sb.table("complaints").insert(record).execute()
+                    break
+                except Exception as e:
+                    err_str = str(e).lower()
+                    if ("23505" in err_str or "duplicate key" in err_str or "complaints_tracking_id_key" in err_str) and attempt < 4:
+                        new_tid = get_next_tracking_id()
+                        logger.warning(f"WhatsApp tracking ID collision, auto-incrementing to {new_tid}")
+                        tracking_id = new_tid
+                        record["tracking_id"] = new_tid
+                        continue
+                    logger.error(f"Failed to insert WhatsApp complaint into Supabase: {e}")
+                    break
 
         store = get_demo_store()
         store["complaints"].insert(0, record)
 
         # Initial Status History
         history_entry = {
-            "id": f"h-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "id": str(uuid.uuid4()),
             "complaint_id": complaint_id,
             "previous_status": None,
             "new_status": "Submitted",
@@ -451,7 +466,7 @@ class WhatsAppService:
         # Attachment if provided
         if data.get("photo_url"):
             att = {
-                "id": f"att-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                "id": str(uuid.uuid4()),
                 "complaint_id": complaint_id,
                 "file_name": "whatsapp_upload.jpg",
                 "file_url": data.get("photo_url"),

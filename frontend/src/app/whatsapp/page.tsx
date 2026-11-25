@@ -24,7 +24,7 @@ interface ChatMessage {
 }
 
 export default function WhatsAppSimulatorPage() {
-  const [phoneNumber, setPhoneNumber] = useState('+919845123456');
+  const [phoneNumber, setPhoneNumber] = useState('+1(555) 162-5159');
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([

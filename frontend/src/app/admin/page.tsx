@@ -37,8 +37,11 @@ import {
   CheckCircle,
   History,
   Lock,
-  Mail
+  Mail,
+  Camera,
+  Navigation
 } from 'lucide-react';
+import ImageUpload from '@/components/ImageUpload';
 import {
   ResponsiveContainer,
   BarChart,
@@ -69,7 +72,10 @@ import {
   suspendAdministrator,
   reactivateAdministrator,
   revokeInvitation,
-  fetchAuditLogs
+  fetchAuditLogs,
+  fetchDepartmentOfficers,
+  approveDepartmentOfficer,
+  deactivateDepartmentOfficer
 } from '@/lib/api';
 import { Complaint, Department, AnalyticsSummary, ComplaintStatus, ComplaintPriority } from '@/types';
 
@@ -126,8 +132,14 @@ export default function AdminDashboardPage() {
   const [overrideSummary, setOverrideSummary] = useState('');
   const [isSavingAI, setIsSavingAI] = useState(false);
 
-  // Active View Tab: 'table' | 'analytics' | 'map' | 'admins'
-  const [viewTab, setViewTab] = useState<'table' | 'analytics' | 'map' | 'admins'>('table');
+  // Active View Tab: 'table' | 'analytics' | 'map' | 'admins' | 'officers'
+  const [viewTab, setViewTab] = useState<'table' | 'analytics' | 'map' | 'admins' | 'officers'>('table');
+
+  // Department Officers Management States (Main Admin Only)
+  const [departmentOfficers, setDepartmentOfficers] = useState<any[]>([]);
+  const [isOfficersLoading, setIsOfficersLoading] = useState(false);
+  const [officerDeptFilter, setOfficerDeptFilter] = useState('All');
+  const [officerStatusFilter, setOfficerStatusFilter] = useState('All');
 
   // Administrator Management States (Primary Admin Only)
   const [adminsData, setAdminsData] = useState<{
@@ -141,8 +153,10 @@ export default function AdminDashboardPage() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteFullName, setInviteFullName] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'primary_admin'>('admin');
-  const [inviteDept, setInviteDept] = useState('General Administration');
+  const [inviteRole, setInviteRole] = useState<'department_officer' | 'primary_admin' | 'admin'>('department_officer');
+  const [inviteDept, setInviteDept] = useState('Sanitation');
+  const [inviteDeptCode, setInviteDeptCode] = useState('SAN');
+  const [inviteEmpId, setInviteEmpId] = useState('');
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteDevUrl, setInviteDevUrl] = useState<string | null>(null);
@@ -160,6 +174,11 @@ export default function AdminDashboardPage() {
       // Check session validity and email verification with backend
       try {
         const profile = await fetchAdminProfile();
+        // Route Department Officers directly to their specialized departmental view
+        if (profile.user.role === 'department_officer') {
+          router.push('/admin/department');
+          return;
+        }
         setAdminUser(profile.user);
         loadData();
       } catch (e) {
@@ -171,6 +190,39 @@ export default function AdminDashboardPage() {
     }
     initSession();
   }, [router]);
+
+  const loadOfficersData = async () => {
+    setIsOfficersLoading(true);
+    try {
+      const data = await fetchDepartmentOfficers();
+      setDepartmentOfficers(data);
+    } catch (e: any) {
+      console.error('Failed to load department officers:', e);
+    } finally {
+      setIsOfficersLoading(false);
+    }
+  };
+
+  const handleApproveOfficer = async (officerId: string, officerName: string) => {
+    try {
+      await approveDepartmentOfficer(officerId);
+      alert(`Department Officer "${officerName}" has been successfully approved and activated.`);
+      loadOfficersData();
+    } catch (err: any) {
+      alert('Error approving officer: ' + err.message);
+    }
+  };
+
+  const handleDeactivateOfficer = async (officerId: string, currentStatus: string) => {
+    const actionLabel = currentStatus === 'active' ? 'suspend' : 'reactivate';
+    if (!confirm(`Are you sure you want to ${actionLabel} this Department Officer account?`)) return;
+    try {
+      await deactivateDepartmentOfficer(officerId);
+      loadOfficersData();
+    } catch (err: any) {
+      alert('Error updating officer status: ' + err.message);
+    }
+  };
 
   const loadAdminData = async () => {
     setIsAdminLoading(true);
@@ -201,6 +253,8 @@ export default function AdminDashboardPage() {
         full_name: inviteFullName.trim(),
         role: inviteRole,
         department_name: inviteDept,
+        department_code: inviteDeptCode,
+        employee_id: inviteEmpId.trim() || undefined,
       });
       setInviteSuccess(res.message);
       if (res.dev_invite_url) {
@@ -208,7 +262,9 @@ export default function AdminDashboardPage() {
       }
       setInviteEmail('');
       setInviteFullName('');
+      setInviteEmpId('');
       loadAdminData();
+      loadOfficersData();
     } catch (err: any) {
       setInviteError(err.message || 'Failed to dispatch invitation.');
     } finally {
@@ -547,21 +603,38 @@ export default function AdminDashboardPage() {
               <span>GIS Map View</span>
             </button>
 
-            {adminUser?.role === 'primary_admin' && (
-              <button
-                onClick={() => {
-                  setViewTab('admins');
-                  loadAdminData();
-                }}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                  viewTab === 'admins'
-                    ? 'bg-amber-600 text-white shadow-sm'
-                    : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 text-amber-500" />
-                <span>Manage Administrators</span>
-              </button>
+            {(adminUser?.role === 'primary_admin' || adminUser?.role === 'main_admin') && (
+              <>
+                <button
+                  onClick={() => {
+                    setViewTab('officers');
+                    loadOfficersData();
+                  }}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                    viewTab === 'officers'
+                      ? 'bg-emerald-700 text-white shadow-sm'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Department Officers ({departmentOfficers.length || '5'})</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setViewTab('admins');
+                    loadAdminData();
+                  }}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                    viewTab === 'admins'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Manage Administrators</span>
+                </button>
+              </>
             )}
           </div>
 
@@ -705,10 +778,22 @@ export default function AdminDashboardPage() {
                           <p className="text-[11px] text-slate-500">{c.citizen_phone}</p>
                         </td>
                         <td className="py-3.5 px-4 text-slate-700 font-medium">
-                          {c.category}
+                          <div className="flex items-center gap-1.5">
+                            <span>{c.category}</span>
+                            {c.image_url && (
+                              <span title="Citizen photo evidence attached" className="text-gov-primary bg-blue-50 p-0.5 rounded">
+                                <Camera className="w-3 h-3" />
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3.5 px-4 text-slate-600">
-                          {c.village_name}, {c.ward_number}
+                          <div className="font-semibold text-slate-800">{c.village_name}, {c.ward_number}</div>
+                          {(c.district || c.taluk) && (
+                            <div className="text-[10px] text-slate-400 font-medium">
+                              {c.taluk ? `${c.taluk}, ` : ''}{c.district || ''}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3.5 px-4">
                           <span
@@ -1234,6 +1319,196 @@ export default function AdminDashboardPage() {
             )}
           </div>
         )}
+
+        {/* TAB 5: DEPARTMENT OFFICERS (MAIN ADMIN / PANCHAYAT OFFICER CONTROL) */}
+        {viewTab === 'officers' && (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-lg text-slate-900 tracking-tight">
+                    Department Officers & Departmental Access Control
+                  </h3>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    Panchayat Officer Authorization
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+                  Department Officers are isolated to their respective departmental grievances (Sanitation, Public Works, Water Supply, Electricity, General Administration). Only the Main Admin (Panchayat Officer) can approve registrations and grant departmental access.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  onClick={() => {
+                    setInviteRole('department_officer');
+                    setInviteDept('Sanitation');
+                    setInviteDeptCode('SAN');
+                    setInviteEmpId(`SAN-OFF-00${departmentOfficers.length + 1}`);
+                    setInviteError(null);
+                    setInviteSuccess(null);
+                    setInviteDevUrl(null);
+                    setIsInviteModalOpen(true);
+                  }}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-2.5 rounded-xl text-xs shadow-sm transition inline-flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Invite Department Officer</span>
+                </button>
+                <button
+                  onClick={loadOfficersData}
+                  disabled={isOfficersLoading}
+                  className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition"
+                  title="Refresh Department Officers"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isOfficersLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Department Officer Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-600">Filter Department:</span>
+                  <select
+                    value={officerDeptFilter}
+                    onChange={(e) => setOfficerDeptFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-semibold text-slate-800 outline-none"
+                  >
+                    <option value="All">All Departments</option>
+                    <option value="SAN">Sanitation (SAN)</option>
+                    <option value="PWD">Public Works (PWD)</option>
+                    <option value="WTR">Water Supply (WTR)</option>
+                    <option value="ELE">Electricity (ELE)</option>
+                    <option value="ADM">General Admin (ADM)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-600">Filter Status:</span>
+                  <select
+                    value={officerStatusFilter}
+                    onChange={(e) => setOfficerStatusFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-semibold text-slate-800 outline-none"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="pending_approval">Pending Approval</option>
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </div>
+              </div>
+
+              {isOfficersLoading ? (
+                <div className="p-12 text-center space-y-3">
+                  <div className="w-8 h-8 border-4 border-gov-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs text-slate-500 font-semibold">Loading department officers...</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                        <th className="py-3.5 px-4">Officer Details</th>
+                        <th className="py-3.5 px-4">Department</th>
+                        <th className="py-3.5 px-4">Employee ID</th>
+                        <th className="py-3.5 px-4">Email Verification</th>
+                        <th className="py-3.5 px-4">Account Status</th>
+                        <th className="py-3.5 px-4">Registered</th>
+                        <th className="py-3.5 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {departmentOfficers
+                        .filter((o) => {
+                          if (officerDeptFilter !== 'All' && o.department_code !== officerDeptFilter) return false;
+                          if (officerStatusFilter !== 'All' && o.status !== officerStatusFilter) return false;
+                          return true;
+                        })
+                        .map((officer) => (
+                          <tr key={officer.id} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3.5 px-4">
+                              <p className="font-bold text-slate-900">{officer.full_name}</p>
+                              <p className="font-mono text-[11px] text-slate-500">{officer.email}</p>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-blue-50 text-blue-800 border border-blue-200">
+                                {officer.department_name} [{officer.department_code || 'DEPT'}]
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
+                              {officer.employee_id || 'N/A'}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              {officer.is_email_verified ? (
+                                <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full text-[10px]">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Verified
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full text-[10px]">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  Unverified
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              {officer.status === 'active' ? (
+                                <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-full text-[11px] border border-emerald-200">
+                                  Active (Approved)
+                                </span>
+                              ) : officer.status === 'pending_approval' ? (
+                                <span className="text-amber-800 font-bold bg-amber-50 px-2.5 py-1 rounded-full text-[11px] border border-amber-200 animate-pulse">
+                                  Awaiting Main Admin Approval
+                                </span>
+                              ) : (
+                                <span className="text-red-700 font-bold bg-red-50 px-2.5 py-1 rounded-full text-[11px] border border-red-200">
+                                  Suspended
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-500">
+                              {new Date(officer.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="py-3.5 px-4 text-right space-x-2">
+                              {officer.status === 'pending_approval' && (
+                                <button
+                                  onClick={() => handleApproveOfficer(officer.id, officer.full_name)}
+                                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition inline-flex items-center gap-1"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Approve Access</span>
+                                </button>
+                              )}
+                              {officer.status === 'active' && (
+                                <button
+                                  onClick={() => handleDeactivateOfficer(officer.id, officer.status)}
+                                  className="px-3 py-1 rounded-lg text-amber-700 hover:bg-amber-50 font-semibold text-xs border border-amber-300 transition"
+                                >
+                                  Suspend
+                                </button>
+                              )}
+                              {officer.status === 'suspended' && (
+                                <button
+                                  onClick={() => handleDeactivateOfficer(officer.id, officer.status)}
+                                  className="px-3 py-1 rounded-lg text-emerald-700 hover:bg-emerald-50 font-semibold text-xs border border-emerald-300 transition"
+                                >
+                                  Reactivate
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* COMPLAINT DETAILS & MANAGEMENT MODAL */}
@@ -1268,17 +1543,120 @@ export default function AdminDashboardPage() {
 
             {/* Modal Scrollable Body */}
             <div className="p-6 overflow-y-auto flex-1 space-y-6 text-xs text-slate-700">
-              {/* Original Complaint Box */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                <div className="flex justify-between items-center text-slate-500 font-medium">
+              {/* Original Complaint Box & Civic Location Breakdown */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex flex-wrap justify-between items-center text-slate-500 font-medium gap-2">
                   <span>Category: <b className="text-slate-800">{activeComplaint.category}</b></span>
-                  <span>Location: <b className="text-slate-800">{activeComplaint.village_name}, {activeComplaint.ward_number}</b></span>
+                  <span>Priority: <b style={{ color: PRIORITY_COLORS[activeComplaint.priority] }}>{activeComplaint.priority}</b></span>
                   <span>Logged: <b>{new Date(activeComplaint.created_at).toLocaleString()}</b></span>
                 </div>
-                <p className="text-slate-800 text-sm leading-relaxed pt-1">
-                  "{activeComplaint.description}"
-                </p>
-                <p className="text-slate-500">📍 Landmark: {activeComplaint.address}</p>
+
+                {/* Structured Location Breakdown */}
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-gov-primary" />
+                      <span>Civic Location Details</span>
+                    </span>
+                    {activeComplaint.latitude && activeComplaint.longitude && (
+                      <a
+                        href={`https://maps.google.com/?q=${activeComplaint.latitude},${activeComplaint.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-bold text-gov-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        <Navigation className="w-3 h-3" />
+                        <span>Open in Google Maps ({activeComplaint.latitude.toFixed(4)}, {activeComplaint.longitude.toFixed(4)})</span>
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">District & Taluk:</span>
+                      <span className="font-bold text-slate-800">
+                        {activeComplaint.district || 'Karnataka'}{activeComplaint.taluk ? ` / ${activeComplaint.taluk}` : ''}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Panchayat & Ward:</span>
+                      <span className="font-bold text-slate-800">
+                        {activeComplaint.village_name} ({activeComplaint.ward_number})
+                      </span>
+                    </div>
+                    <div className="sm:col-span-2 pt-1 border-t border-slate-100">
+                      <span className="text-slate-400 block text-[10px]">Landmark / Address:</span>
+                      <span className="font-semibold text-slate-800">
+                        {activeComplaint.address} {activeComplaint.pincode ? `- ${activeComplaint.pincode}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">
+                    Citizen Complaint Statement
+                  </span>
+                  <p className="text-slate-800 text-sm leading-relaxed">
+                    "{activeComplaint.description}"
+                  </p>
+                </div>
+
+                {/* Citizen Photo Evidence Display */}
+                {activeComplaint.image_url && (
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-lg overflow-hidden bg-slate-900 border border-slate-300 shrink-0">
+                      <img
+                        src={activeComplaint.image_url}
+                        alt="Citizen Upload"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200 mb-1">
+                        Citizen Photo Evidence
+                      </span>
+                      <p className="text-[11px] font-mono text-slate-500 truncate">{activeComplaint.image_url}</p>
+                      <a
+                        href={activeComplaint.image_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-gov-primary hover:underline font-bold inline-flex items-center gap-1 mt-0.5"
+                      >
+                        <span>Open Full Image</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Verified Resolution Proof Display (if resolved) */}
+                {activeComplaint.proof_url && (
+                  <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-300 flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-lg overflow-hidden bg-slate-900 border border-emerald-300 shrink-0">
+                      <img
+                        src={activeComplaint.proof_url}
+                        alt="Resolution Proof"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded mb-1">
+                        Verified Resolution Photo
+                      </span>
+                      <p className="text-[11px] font-mono text-slate-600 truncate">{activeComplaint.proof_url}</p>
+                      <a
+                        href={activeComplaint.proof_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-emerald-800 hover:underline font-bold inline-flex items-center gap-1 mt-0.5"
+                      >
+                        <span>View Work Completion Evidence</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* AI SUGGESTION & OVERRIDE SECTION */}
@@ -1534,15 +1912,12 @@ export default function AdminDashboardPage() {
 
                   {newStatus === 'Resolved' && (
                     <div>
-                      <label className="block text-[11px] font-semibold text-emerald-700 mb-1">
-                        Resolution Photo Proof URL (Optional)
-                      </label>
-                      <input
-                        type="url"
-                        placeholder="https://example.com/resolved_proof.jpg"
+                      <ImageUpload
                         value={resolutionProofUrl}
-                        onChange={(e) => setResolutionProofUrl(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-emerald-300 text-xs"
+                        onChange={(url) => setResolutionProofUrl(url || '')}
+                        folder="gramseva_resolutions"
+                        label="Resolution Photo Proof"
+                        helperText="Upload completion photo (Cloudinary / Fast CDN)."
                       />
                     </div>
                   )}
@@ -1621,8 +1996,10 @@ export default function AdminDashboardPage() {
                   <UserPlus className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm">Invite Administrator</h3>
-                  <p className="text-[11px] text-slate-400">GramSeva Administrative Access Authorization</p>
+                  <h3 className="font-bold text-sm">
+                    {inviteRole === 'department_officer' ? 'Invite Department Officer' : 'Invite Administrator'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Panchayat Official Access Invitation</p>
                 </div>
               </div>
               <button
@@ -1642,7 +2019,7 @@ export default function AdminDashboardPage() {
                       <span>Invitation Dispatched!</span>
                     </div>
                     <p className="leading-relaxed">{inviteSuccess}</p>
-                    <p className="text-[11px] text-emerald-700">The 24-hour invitation link has been dispatched to the administrator&apos;s official inbox.</p>
+                    <p className="text-[11px] text-emerald-700">The 24-hour onboarding link has been dispatched to the official inbox.</p>
                   </div>
 
                   {inviteDevUrl && (
@@ -1651,7 +2028,7 @@ export default function AdminDashboardPage() {
                         <Sparkles className="w-4 h-4 text-amber-600" />
                         <span>Demonstration Mode Quick Link</span>
                       </div>
-                      <p className="text-[11px] text-amber-700 mb-2">Simulate onboarding as the invited administrator:</p>
+                      <p className="text-[11px] text-amber-700 mb-2">Simulate onboarding as the invited officer:</p>
                       <a
                         href={inviteDevUrl}
                         target="_blank"
@@ -1685,12 +2062,65 @@ export default function AdminDashboardPage() {
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Administrator Full Name
+                      Role Category
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label
+                        className={`p-3 rounded-xl border cursor-pointer text-xs flex flex-col gap-1 transition ${
+                          inviteRole === 'department_officer'
+                            ? 'border-emerald-600 bg-emerald-50 text-slate-900 font-semibold'
+                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="invite_role"
+                          checked={inviteRole === 'department_officer'}
+                          onChange={() => {
+                            setInviteRole('department_officer');
+                            if (inviteDept === 'General Administration') {
+                              setInviteDept('Sanitation');
+                              setInviteDeptCode('SAN');
+                            }
+                          }}
+                          className="sr-only"
+                        />
+                        <span className="text-emerald-800 font-bold">Department Officer</span>
+                        <span className="text-[10px] text-slate-500 font-normal">Department-isolated staff</span>
+                      </label>
+
+                      <label
+                        className={`p-3 rounded-xl border cursor-pointer text-xs flex flex-col gap-1 transition ${
+                          inviteRole === 'primary_admin'
+                            ? 'border-amber-500 bg-amber-50/50 text-slate-900 font-semibold'
+                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="invite_role"
+                          checked={inviteRole === 'primary_admin'}
+                          onChange={() => {
+                            setInviteRole('primary_admin');
+                            setInviteDept('General Administration');
+                            setInviteDeptCode('ADM');
+                          }}
+                          className="sr-only"
+                        />
+                        <span className="text-amber-800 font-bold">Main Admin</span>
+                        <span className="text-[10px] text-slate-500 font-normal">Panchayat Officer</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Officer Full Name
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Suresh Gowda"
+                      placeholder="e.g. Ramesh Kumar"
                       value={inviteFullName}
                       onChange={(e) => setInviteFullName(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-gov-primary outline-none"
@@ -1704,72 +2134,65 @@ export default function AdminDashboardPage() {
                     <input
                       type="email"
                       required
-                      placeholder="e.g. suresh.pwd@gramseva.gov.in"
+                      placeholder="e.g. ramesh.san@gramseva.gov.in"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-gov-primary outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Assigned Department
-                    </label>
-                    <select
-                      value={inviteDept}
-                      onChange={(e) => setInviteDept(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-gov-primary outline-none bg-white"
-                    >
-                      <option value="General Administration">General Administration</option>
-                      <option value="Sanitation">Sanitation</option>
-                      <option value="Public Works">Public Works</option>
-                      <option value="Water Supply">Water Supply</option>
-                      <option value="Electricity">Electricity</option>
-                    </select>
-                  </div>
+                  {inviteRole === 'department_officer' && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Assigned Department
+                        </label>
+                        <select
+                          value={inviteDept}
+                          onChange={(e) => {
+                            const dept = e.target.value;
+                            setInviteDept(dept);
+                            setInviteRole('department_officer'); // Always department_officer for departments
+                            const codeMap: Record<string, string> = {
+                              Sanitation: 'SAN',
+                              'Public Works': 'PWD',
+                              'Water Supply': 'WTR',
+                              Electricity: 'ELE',
+                              'General Administration': 'ADM',
+                            };
+                            const code = codeMap[dept] || 'ADM';
+                            setInviteDeptCode(code);
+                            if (!inviteEmpId || inviteEmpId.includes('-OFF-')) {
+                              setInviteEmpId(`${code}-OFF-00${departmentOfficers.length + 1}`);
+                            }
+                          }}
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-gov-primary outline-none bg-white font-semibold text-slate-800"
+                        >
+                          <option value="Sanitation">Sanitation (SAN)</option>
+                          <option value="Public Works">Public Works (PWD)</option>
+                          <option value="Water Supply">Water Supply (WTR)</option>
+                          <option value="Electricity">Electricity (ELE)</option>
+                          <option value="General Administration">General Administration (ADM)</option>
+                        </select>
+                      </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Administrative Role
-                    </label>
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                      <label
-                        className={`p-3 rounded-xl border cursor-pointer text-xs flex flex-col gap-1 transition ${
-                          inviteRole === 'admin'
-                            ? 'border-gov-primary bg-blue-50/50 text-slate-900 font-semibold'
-                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Employee ID (Unique)
+                        </label>
                         <input
-                          type="radio"
-                          name="role"
-                          checked={inviteRole === 'admin'}
-                          onChange={() => setInviteRole('admin')}
-                          className="sr-only"
+                          type="text"
+                          placeholder="e.g. SAN-OFF-005"
+                          value={inviteEmpId}
+                          onChange={(e) => setInviteEmpId(e.target.value.toUpperCase())}
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs uppercase font-mono font-semibold focus:ring-2 focus:ring-gov-primary outline-none"
                         />
-                        <span>Administrator</span>
-                        <span className="text-[10px] text-slate-500 font-normal">Grievance & CRM management</span>
-                      </label>
-
-                      <label
-                        className={`p-3 rounded-xl border cursor-pointer text-xs flex flex-col gap-1 transition ${
-                          inviteRole === 'primary_admin'
-                            ? 'border-amber-500 bg-amber-50/50 text-slate-900 font-semibold'
-                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="role"
-                          checked={inviteRole === 'primary_admin'}
-                          onChange={() => setInviteRole('primary_admin')}
-                          className="sr-only"
-                        />
-                        <span className="text-amber-800">Primary Admin</span>
-                        <span className="text-[10px] text-slate-500 font-normal">Full authority & invite rights</span>
-                      </label>
-                    </div>
-                  </div>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Assigned role in Supabase: <strong className="text-emerald-700">department_officer</strong> ({inviteDeptCode})
+                        </p>
+                      </div>
+                    </>
+                  )}
 
                   <div className="pt-2 flex items-center justify-end gap-2">
                     <button
